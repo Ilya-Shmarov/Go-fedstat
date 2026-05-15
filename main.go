@@ -73,12 +73,37 @@ func extractScripts(html string) []string {
 	return out
 }
 
-var wbOutsideSingleQuotes = regexp.MustCompile(`\b(?=([^']*'[^']*')*[^']*$)`)
+func isJSWordRune(r rune) bool {
+	return r == '_' || r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r > 127
+}
 
 func jsObjectLiteralToJSON(s string) string {
-	s = wbOutsideSingleQuotes.ReplaceAllString(s, `'`)
-	s = strings.ReplaceAll(s, `'`, `"`)
-	return s
+	// Go regexp does not support lookaheads, so we reproduce the original
+	// boundary-quoting behavior with a small state machine.
+	runes := []rune(s)
+	var b strings.Builder
+	inSingleQuotes := false
+
+	for i, r := range runes {
+		var prev rune
+		if i > 0 {
+			prev = runes[i-1]
+		}
+		if !inSingleQuotes && isJSWordRune(prev) != isJSWordRune(r) {
+			b.WriteRune('\'')
+		}
+
+		b.WriteRune(r)
+		if r == '\'' {
+			inSingleQuotes = !inSingleQuotes
+		}
+	}
+
+	if !inSingleQuotes && len(runes) > 0 && isJSWordRune(runes[len(runes)-1]) {
+		b.WriteRune('\'')
+	}
+
+	return strings.ReplaceAll(b.String(), `'`, `"`)
 }
 
 func parseJS1(lines []string) (map[string]any, error) {
